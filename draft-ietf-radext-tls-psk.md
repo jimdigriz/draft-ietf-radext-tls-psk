@@ -104,17 +104,31 @@ We first give requirements for creating and managing PSKs, followed by usability
 
 ### PSK Requirements
 
-Reuse of a PSK in multiple versions of TLS (e.g., TLS 1.2 and TLS 1.3) is considered unsafe ({{RFC8446, Section E.7}}).  Where TLS 1.3 binds the PSK to a particular key derivation function, TLS 1.2 does not.  This binding means that it is possible to use the same PSK in different hashes, leading to the potential for attacking the PSK by comparing the hash outputs.  While there are no known insecurities, these uses are not known to be secure, and should therefore be avoided.
+Reuse of a PSK in multiple versions of TLS (e.g., TLS 1.2 and TLS 1.3) is considered unsafe ({{RFC8446, Section E.7}}).  Where TLS 1.3 binds the PSK to a particular key derivation function, TLS 1.2 does not.  This binding means that it is possible to use the same PSK in different hashes, leading to the potential for attacking the PSK by comparing the hash outputs.  While there are no known insecurities, these uses are not known to be secure, and should therefore be avoided.  For this reason, an implementation MUST NOT use the same PSK for TLS 1.3 and for earlier versions of TLS.  The exact manner in which this requirement is enforced is implementation-specific.  One possibility is to have two different PSKs.  Another possibility is to forbid the use of TLS versions less than TLS 1.3.
 
-It may be tempting for servers to implement a "trust on first use" (TOFU) policy with respect to clients.  Such behavior is NOT RECOMMENDED.  When servers receive a connection from an unknown client, they SHOULD log the PSK identity, source IP address, and any other information which may be relevant.  An administrator can then later look at the logs and determine the appropriate action to take.
-
-{{RFC9258}} adds a key derivation function (KDF) to the import interface of (D)TLS 1.3, which binds the externally provided PSK to the protocol version.  That process is preferred to any TOFU mechanism.  In particular, that document:
+{{RFC9258}} adds a key derivation function (KDF) to the import interface of (D)TLS 1.3, which binds the externally provided PSK to the protocol version.  In particular, that document:
 
 > ... describes a mechanism for importing PSKs derived from external PSKs by including the target KDF, (D)TLS protocol version, and an optional context string to ensure uniqueness. This process yields a set of candidate PSKs, each of which are bound to a target KDF and protocol, that are separate from those used in (D)TLS 1.2 and prior versions. This expands what would normally have been a single PSK and identity into a set of PSKs and identities.
 
-An implementation MUST NOT use the same PSK for TLS 1.3 and for earlier versions of TLS.  This requirement prevents reuse of a PSK with multiple TLS versions, which prevents the attacks discussed in {{RFC8446, Section E.7}}.  The exact manner in which this requirement is enforced is implementation-specific.  One possibility is to have two different PSKs.  Another possibility is to forbid the use of TLS versions less than TLS 1.3.
+TODO: better wording to deal with forwards and backwards compatibility (how to phase out direct PSK importing if a deployment wishes to move to only use RFC9258)
 
-Implementations MUST follow the directions of {{RFC9257, Section 6}} for the use of external PSKs in TLS.  That document provides extremely useful guidance on generating and using PSKs.
+Implementations MAY import the external PSK in its raw form directly whilst they SHOULD also use the process described in {{RFC9258}}.
+
+Where an implementation chooses to use {{RFC9258}}, it MUST use the following value for `ImportedIdentity.context`:
+
+TODO: feedback to make this less awful
+
+~~~~
+
+    context = "tls-psk@changeme-do-we-need-a-leading-version-byte?.ietf.org" | 0x00 | [zero or more bytes of nonce] | [single octet providing length of context inclusive of its-self]
+
+~~~~
+
+Of note, the length component is required so that an implementation may separate `ImportedIdentity.external_identity` and `ImportedIdentity.context`.
+
+{{RFC9258}} describes an optimization of pre-computing all possible values of `ipskx` for each supported cipher. Where an implementation wishes to utilize this, then the `nonce` component of `ImportedIdentity.context` would be omitted. For implementations looking for a mechanism to prevent connections to itself, then `nonce` could be provided here.
+
+Implementations MUST follow the directions of {{RFC9257, Section 6}} for the use of external PSKs in TLS.  That document provides extremely useful guidance on generating and using PSKs. Adding to that, at the time of writing, only GnuTLS supports {{RFC9258}}.
 
 Implementations MUST support PSKs of at least 32 octets in length, and SHOULD support PSKs of 64 octets or more.  As the PSKs are generally hashed before being used in TLS, the useful entropy of a PSK is limited by the size of the hash output.  This output may be 256, 384, or 512 bits in length.  Nevertheless, it is good practice for implementations to allow entry of PSKs of more than 64 octets, as the PSK may be in a form other than bare binary data.  Implementations which limit the PSK to a maximum of 64 octets are likely to use PSKs which have much less than 512 bits of entropy.  That is, a PSK with high entropy may be expanded via some construct (e.g., base32 as in the example below) in order to make it easier for people to interact with.  Where 512 bits of entropy are input to an encoding construct, the output may be larger than 64 octets.
 
@@ -123,6 +137,8 @@ Implementations MUST require that PSKs be at least 16 octets in length.  That is
 Where user passwords are generally intended to be remembered and entered by people on a regular basis,  PSKs are intended to be entered once, and then automatically saved in a system configuration.  As such, due to the limited entropy of passwords, they are not acceptable for use with TLS-PSK, and would only be acceptable for use with a password-authenticated key exchange (PAKE) TLS method {{?RFC8492}}.  Implementations MUST therefore support entry and storage of PSKs as undistinguished octets.
 
 We also incorporate by reference the requirements of {{RFC7360, Section 10.2}} when using PSKs.
+
+It may be tempting for servers to implement a "trust on first use" (TOFU) policy with respect to clients.  Such behavior is NOT RECOMMENDED.  When servers receive a connection from an unknown client, they SHOULD log the PSK identity, source IP address, and any other information which may be relevant.  An administrator can then later look at the logs and determine the appropriate action to take.
 
 ### Usability Guidance
 
